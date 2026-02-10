@@ -176,7 +176,7 @@ def sort_dir(id,od):
 def setup_logs():
     global logger
     formatstr='[%(asctime)s - %(levelname)s] - %(message)s'
-    logger = logging.getLogger('musisort')
+    logger = logging.getLogger('apollo')
     logger.setLevel(logging.DEBUG)
 
     # Create console handler with a lower level (e.g., INFO)
@@ -184,7 +184,7 @@ def setup_logs():
     console_handler.setLevel(logging.WARN)  # Console logs at INFO level
 
     # Create file handler with a higher level (e.g., DEBUG)
-    file_handler = logging.FileHandler('./musisort.log')
+    file_handler = logging.FileHandler('./apollo.log')
     file_handler.setLevel(logging.DEBUG)  # File logs at DEBUG level
 
     formatter = logging.Formatter(formatstr)
@@ -197,7 +197,7 @@ def setup_logs():
     logger.info('Starting!')
 
 if __name__=="__main__":
-    parser = argparse.ArgumentParser(description="MUSISORT: Music File Automatic Sorter")
+    parser = argparse.ArgumentParser(description="APOLLO: Music File Automatic Sorter")
     parser.add_argument('--input','-i',dest='input',type=Path,required=True,help="Input directory of music files")
     parser.add_argument('--output','-o',dest='output',type=Path,required=True,help="Output directory of sorted music files")
     parser.add_argument('--prepend-track-number',dest='prepend_tracknum',required=False,action='store_true',help="If included, will prepend the track number and disc number before the name of each file (when available)")
