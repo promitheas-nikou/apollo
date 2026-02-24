@@ -8,7 +8,7 @@ import traceback
 import shutil
 import re
 from os import urandom
-import pickle
+# import pickle
 
 CONFIG_PREPEND_TRACKNUM = True
 CONFIG_SPLIT_IN_ALBUM_DIRECTORIES = True
@@ -18,6 +18,7 @@ CONFIG_LEVEL_NEW_FILE_ALERT = logging.DEBUG
 CONFIG_LEVEL_DUPLICATE_FILE_ALERT = logging.WARNING
 CONFIG_OUTPUT_DIRECTORY = './'
 CONFIG_DO_BLACK_LIST = False
+CONFIG_VERBOSE = False
 CONFIG_BLACK_LIST_PATTERNS = []
 
 def split_by_any(s, delimiters):
@@ -65,13 +66,6 @@ def extract_metadata(file_path):
 MUSIC_FILE_SUFFIXES = [".mp3", ".ogg", ".flac", ".m4a"]
 entries = {}
 
-def check_add_entry(art,alb,tit,v):
-    k=(art,alb,tit)
-    if k in entries:
-        return False
-    entries[k]=str(v)
-    return True
-
 def sanitize_path(path_str):
     # Define a regex pattern for invalid characters in paths
     invalid_chars = r'[\?<>:"/\\\|\*\x00-\x1F]'
@@ -94,18 +88,18 @@ def sort_file(fp, op):
     if Artist==None:
         Artist = 'Unknown Artist'
         logger.warning(f"Missing artist info on file {fp}")
-    artist_path = sanitize_path(Artist)
+    artist_clean_name = sanitize_path(Artist)
     Album = md.get('album',None)
     if Album==None:
         Album = 'Unknown Album'
         logger.warning(f"Missing album info on file {fp}")
-    album_path = sanitize_path(Album)
+    album_clean_name = sanitize_path(Album)
     Title = md.get('title',None)
     if Title==None:
         #Title = f'Unknown Title {urandom(4).hex()}'
         logger.warning(f"Missing title on file {fp}")
-        tfn = sanitize_path(fp.stem)
-        Title = tfn
+        track_clean_name = sanitize_path(fp.stem)
+        Title = track_clean_name
     if CONFIG_DO_BLACK_LIST:
         if any((pat in Title.lower()) for pat in CONFIG_BLACK_LIST_PATTERNS):
             logger.warning(f'SKIPPING (BLACKLIST): Skipping file {fp} because title {Title} matches blacklist pattern!')
@@ -121,24 +115,24 @@ def sort_file(fp, op):
     Number = md.get('tracknumber',None)
     Disc = md.get('discnumber',None)
     if CONFIG_PREPEND_TRACKNUM and Number!=None:
-        tfn = sanitize_path(f"{'' if Disc==None else f'{split_by_any(Disc,CONFIG_VALID_NUMBER_DELIMETERS)[0]}-'}{split_by_any(Number,CONFIG_VALID_NUMBER_DELIMETERS)[0]} - {Title}")
+        newtrackname = sanitize_path(f"{'' if Disc==None else f'{split_by_any(Disc,CONFIG_VALID_NUMBER_DELIMETERS)[0]}-'}{split_by_any(Number,CONFIG_VALID_NUMBER_DELIMETERS)[0]} - {Title}")
     else:
-        tfn = sanitize_path(Title)
+        newtrackname = sanitize_path(Title)
     if CONFIG_SPLIT_IN_ALBUM_DIRECTORIES:
-        nfp = Path(artist_path) / album_path / (tfn+fp.suffix)
+        newtrackpath = Path(artist_clean_name) / album_clean_name / (newtrackname+fp.suffix)
     else:
-        nfp = Path(artist_path) / (tfn+fp.suffix)
+        newtrackpath = Path(artist_clean_name) / (newtrackname+fp.suffix)
     logger.info(f"Sorting file {fp}...")
-    if not check_add_entry(artist_path,album_path,tfn,nfp):
-        logger.log(CONFIG_LEVEL_DUPLICATE_FILE_ALERT,f"SKIPPING (DUPLICATE): Skipping duplicate file {fp}...")
+    if (op/newtrackpath).exists():
+        logger.log(CONFIG_LEVEL_DUPLICATE_FILE_ALERT,f"SKIPPING (DUPLICATE): Skipping duplicate file {fp} (exists as {newtrackpath})...")
         #logger.log(CONFIG_LEVEL_DUPLICATE_FILE_ALERT, f"Already exists at {entries[(artist_path,album_path,tfn)]}")
-        return entries[(artist_path,album_path,tfn)]
+        return newtrackpath
     else:
-        (op/nfp).parent.mkdir(parents=True,exist_ok=True)
+        (op/newtrackpath).parent.mkdir(parents=True,exist_ok=True)
         logger.log(CONFIG_LEVEL_NEW_FILE_ALERT,f"Found new file {fp}!")
-        shutil.copy2(fp,op / nfp)
-        logger.debug(f"Copying: {fp} -> {nfp}")
-        return nfp
+        shutil.copy2(fp,op / newtrackpath)
+        logger.debug(f"Copying: {fp} -> {newtrackpath}")
+        return newtrackpath
 
 
 def make_unique_fname(fn):
@@ -181,7 +175,7 @@ def setup_logs():
 
     # Create console handler with a lower level (e.g., INFO)
     console_handler = logging.StreamHandler()
-    console_handler.setLevel(logging.WARN)  # Console logs at INFO level
+    console_handler.setLevel(logging.DEBUG if CONFIG_VERBOSE else logging.WARN)  # Console logs at INFO level
 
     # Create file handler with a higher level (e.g., DEBUG)
     file_handler = logging.FileHandler('./apollo.log')
@@ -202,11 +196,12 @@ if __name__=="__main__":
     parser.add_argument('--output','-o',dest='output',type=Path,required=True,help="Output directory of sorted music files")
     parser.add_argument('--prepend-track-number',dest='prepend_tracknum',required=False,action='store_true',help="If included, will prepend the track number and disc number before the name of each file (when available)")
     parser.add_argument('--dont-split-albums',dest='split_album',required=False,action='store_false',help="If included, will dump all music files in the artist directory, not in an album subdirectory")
-    parser.add_argument('--entries','-e',dest='entries_file',type=str,default='entries.pkl',help="The path to the entries .pkl file that stores the current sorted files (default: 'entries.pkl')")
+    # parser.add_argument('--entries','-e',dest='entries_file',type=str,default='entries.pkl',help="The path to the entries .pkl file that stores the current sorted files (default: 'entries.pkl')")
     parser.add_argument('--create-playlist','-l',dest='playlist',required=False,action='store_true',help="If included, will create a text file, containing the paths to the places where the sorted music files are stored, for every song in the input directory and subdirectory, each in its own line, in output/Playlist/(name of input folder)")
     parser.add_argument('--warn-new',dest='warnnew',required=False,action='store_true',help="If included, will log warnings for all new files detected")
     parser.add_argument('--warn-duplicate',dest='warndup',required=False,action='store_true',help="If included, will log warningd for all files detected that are already stored and indexed in entries")
     parser.add_argument('--ignore-pattern','-ip',dest='ignorepat',type=str,default='',required=False,help="If included, must be a string of the form '<string 1>|<string 2>|...|<string n>, where if any of the patterns match on the song name, verbatim, the song will be SKIPPED, and a warning will be issued")
+    parser.add_argument('--verbose',dest='verbose',action='store_true',help="If specified, will print ALL logs (thats a lot) to console. This is not required as all messages are recorded in the logfile.")
     args = parser.parse_args()
     CONFIG_PREPEND_TRACKNUM = args.prepend_tracknum
     CONFIG_SPLIT_IN_ALBUM_DIRECTORIES = args.split_album
@@ -215,25 +210,26 @@ if __name__=="__main__":
     CONFIG_LEVEL_NEW_FILE_ALERT = logging.WARNING if args.warnnew else logging.DEBUG
     CONFIG_OUTPUT_DIRECTORY = Path(args.output)
     CONFIG_DO_BLACK_LIST = args.ignorepat!=''
+    CONFIG_VERBOSE = args.verbose
     if CONFIG_DO_BLACK_LIST:
         CONFIG_BLACK_LIST_PATTERNS = [pat.lower() for pat in args.ignorepat.split('|')]
     setup_logs()
-    entriespath = Path(args.entries_file).resolve() if '/' in str(args.entries_file) else Path(args.output) / args.entries_file
-    logger.warning(f"Storing entries file in: {entriespath}")
-    if entriespath.is_dir():
-        logger.critical("ENTRIES FILEPATH IS A DIRECTORY! QUITTING!")
-        exit(1)
-    entriespath.parent.mkdir(parents=True,exist_ok=True)
-    if entriespath.exists():
-        with open(entriespath,'rb') as f:
-            entries = pickle.load(f)
+    # entriespath = Path(args.entries_file).resolve() if '/' in str(args.entries_file) else Path(args.output) / args.entries_file
+    # logger.warning(f"Storing entries file in: {entriespath}")
+    # if entriespath.is_dir():
+    #     logger.critical("ENTRIES FILEPATH IS A DIRECTORY! QUITTING!")
+    #     exit(1)
+    # entriespath.parent.mkdir(parents=True,exist_ok=True)
+    # if entriespath.exists():
+    #     with open(entriespath,'rb') as f:
+    #         entries = pickle.load(f)
     try:
         sort_dir(args.input,args.output)
-        with open(entriespath,'wb') as f:
-            pickle.dump(entries, f)
+        # with open(entriespath,'wb') as f:
+        #     pickle.dump(entries, f)
     except Exception as e:
         logger.critical('ENCOUNTERED UNEXPECTED ERROR!!!')
         logger.critical(str(e))
-        logger.critical('DUMPING CURRENT TABLE TO BACKUP FILE')
-        with open(entriespath.with_suffix(entriespath.suffix+'.bak'),'wb') as f:
-            pickle.dump(entries, f)
+        # logger.critical('DUMPING CURRENT TABLE TO BACKUP FILE')
+        # with open(entriespath.with_suffix(entriespath.suffix+'.bak'),'wb') as f:
+        #     pickle.dump(entries, f)

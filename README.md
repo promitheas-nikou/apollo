@@ -3,3 +3,8 @@
 I made APOLLO as a way to quickly sort and index all my music files, both to organize them better and to save space by deleting duplicates. Also it can automatically create m3u playlist files (recognized by most music players), that should work with absolutely no setup, so you can not only index the files, but also create references to them in those playlist.
 I also took extra care to make sure all internal references (excluding obviously the input path and output path), are relative to the output directory, meaning you can copy this on any other path or even other machine (including entries.pkl...), and it should recognize the existing files.
 It uses mutagen to extract music file tags, and it sorts them according to those tags (according also to the options specified in the CLI). The help instructions should be pretty detailed and self explanatory, but if by any chance someone is interested and has any questions or notices any bugs, feel free to contact me, or open an issue here!
+
+Example usage:
+
+apollo -i /home/username/Downloads/songs/ -o /home/username/Music/Archive/ --warn-duplicate --ignore-pattern "live"
+apollo -i /home/username/Downloads/playlist/ -o /home/username/Music/Archive/ --warn-new --create-playlist
