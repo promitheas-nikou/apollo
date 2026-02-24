@@ -140,10 +140,12 @@ def make_unique_fname(fn):
     path.parent.mkdir(parents=True,exist_ok=True)
     if not path.exists():
         return path
+    logger.debug(f"Filepath '{path}' exists already!")
     i=1
     while True:
         new_path = path.with_stem(f"{path.stem}({i})")
         if not new_path.exists():
+            logger.debug(f"Redirecting '{path}' -> '{new_path}'!")
             return new_path
         i+=1
 
@@ -165,11 +167,13 @@ def sort_dir(id,od):
             plf.write(str(Path('../')/nfp)+'\n')
     if CONFIG_WRITE_PLAYLIST:
         plf.close()
+        return nfnu.name
         
 
 def setup_logs():
     global logger
-    formatstr='[%(asctime)s - %(levelname)s] - %(message)s'
+    formatstr_file='[%(asctime)s - %(levelname)s] - %(message)s'
+    formatstr_console='[%(levelname)s] %(message)s'
     logger = logging.getLogger('apollo')
     logger.setLevel(logging.DEBUG)
 
@@ -181,9 +185,11 @@ def setup_logs():
     file_handler = logging.FileHandler('./apollo.log')
     file_handler.setLevel(logging.DEBUG)  # File logs at DEBUG level
 
-    formatter = logging.Formatter(formatstr)
-    console_handler.setFormatter(formatter)
-    file_handler.setFormatter(formatter)
+    formatter_file = logging.Formatter(formatstr_file)
+    formatter_console = logging.Formatter(formatstr_console)
+
+    file_handler.setFormatter(formatter_file)
+    console_handler.setFormatter(formatter_console)
 
     logger.addHandler(console_handler)
     logger.addHandler(file_handler)
@@ -198,6 +204,7 @@ if __name__=="__main__":
     parser.add_argument('--dont-split-albums',dest='split_album',required=False,action='store_false',help="If included, will dump all music files in the artist directory, not in an album subdirectory")
     # parser.add_argument('--entries','-e',dest='entries_file',type=str,default='entries.pkl',help="The path to the entries .pkl file that stores the current sorted files (default: 'entries.pkl')")
     parser.add_argument('--create-playlist','-l',dest='playlist',required=False,action='store_true',help="If included, will create a text file, containing the paths to the places where the sorted music files are stored, for every song in the input directory and subdirectory, each in its own line, in output/Playlist/(name of input folder)")
+    parser.add_argument('--archive-playlists','-L',dest='playlist_archive',required=False,action='store_true',help="When specified, will read all subdirectories of specified input directory (note, only subDIRECTORIES, files placed directly in the directory will be ignored), and will sort each one as an individual playlist. It would be the same as calling apollo -l on each (immediate) subdir. --create-playlists is implicit")
     parser.add_argument('--warn-new',dest='warnnew',required=False,action='store_true',help="If included, will log warnings for all new files detected")
     parser.add_argument('--warn-duplicate',dest='warndup',required=False,action='store_true',help="If included, will log warningd for all files detected that are already stored and indexed in entries")
     parser.add_argument('--ignore-pattern','-ip',dest='ignorepat',type=str,default='',required=False,help="If included, must be a string of the form '<string 1>|<string 2>|...|<string n>, where if any of the patterns match on the song name, verbatim, the song will be SKIPPED, and a warning will be issued")
@@ -211,6 +218,9 @@ if __name__=="__main__":
     CONFIG_OUTPUT_DIRECTORY = Path(args.output)
     CONFIG_DO_BLACK_LIST = args.ignorepat!=''
     CONFIG_VERBOSE = args.verbose
+    CONFIG_PLAYLIST_ARCHIVE = args.playlist_archive
+    if CONFIG_PLAYLIST_ARCHIVE:
+        CONFIG_WRITE_PLAYLIST = True
     if CONFIG_DO_BLACK_LIST:
         CONFIG_BLACK_LIST_PATTERNS = [pat.lower() for pat in args.ignorepat.split('|')]
     setup_logs()
@@ -223,8 +233,22 @@ if __name__=="__main__":
     # if entriespath.exists():
     #     with open(entriespath,'rb') as f:
     #         entries = pickle.load(f)
+    if not Path(args.input).is_dir():
+        logger.fatal("ERROR! INPUT DIRECTORY IS NOT A DIRECTORY!")
+        exit(1)
     try:
-        sort_dir(args.input,args.output)
+        if CONFIG_PLAYLIST_ARCHIVE:
+            logger.warning("Proceeding in playlist archive mode!")
+            input_dir = Path(args.input)
+            for child in input_dir.iterdir():
+                if child.is_dir():
+                    logger.warning(f"====== Sorting new playlist directory {child.name}! ======")
+                    previous_count = files_processed
+                    r = sort_dir(child, args.output)
+                    total_files = files_processed-previous_count
+                    logger.warning(f"====== Completed generation of playlist '{r}' ({total_files} files)! ======")
+        else:
+            sort_dir(args.input,args.output)
         # with open(entriespath,'wb') as f:
         #     pickle.dump(entries, f)
     except Exception as e:
