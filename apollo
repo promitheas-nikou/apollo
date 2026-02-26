@@ -8,7 +8,13 @@ import traceback
 import shutil
 import re
 from os import urandom
+import sys
 # import pickle
+
+APOLLO_FULL_NAME = "APOLLO: Music File Automatic Sorter"
+APOLLO_COPYRIGHT = "(C) 2026 Promitheas Nikou"
+APOLLO_LICENSE = "GNU General Public License V3"
+APOLLO_VERSION = "1.0.0"
 
 CONFIG_PREPEND_TRACKNUM = True
 CONFIG_SPLIT_IN_ALBUM_DIRECTORIES = True
@@ -197,7 +203,15 @@ def setup_logs():
     logger.info('Starting!')
 
 if __name__=="__main__":
-    parser = argparse.ArgumentParser(description="APOLLO: Music File Automatic Sorter")
+    if '--version' in sys.argv:
+        print(f"""{APOLLO_FULL_NAME} v. {APOLLO_VERSION}
+{APOLLO_COPYRIGHT}
+
+Created by Promitheas Nikou
+
+Released under {APOLLO_LICENSE}""")
+        exit(0)
+    parser = argparse.ArgumentParser(description=f"{APOLLO_FULL_NAME} {APOLLO_COPYRIGHT}")
     parser.add_argument('--input','-i',dest='input',type=Path,required=True,help="Input directory of music files")
     parser.add_argument('--output','-o',dest='output',type=Path,required=True,help="Output directory of sorted music files")
     parser.add_argument('--prepend-track-number',dest='prepend_tracknum',required=False,action='store_true',help="If included, will prepend the track number and disc number before the name of each file (when available)")
@@ -206,9 +220,10 @@ if __name__=="__main__":
     parser.add_argument('--create-playlist','-l',dest='playlist',required=False,action='store_true',help="If included, will create a text file, containing the paths to the places where the sorted music files are stored, for every song in the input directory and subdirectory, each in its own line, in output/Playlist/(name of input folder)")
     parser.add_argument('--archive-playlists','-L',dest='playlist_archive',required=False,action='store_true',help="When specified, will read all subdirectories of specified input directory (note, only subDIRECTORIES, files placed directly in the directory will be ignored), and will sort each one as an individual playlist. It would be the same as calling apollo -l on each (immediate) subdir. --create-playlists is implicit")
     parser.add_argument('--warn-new',dest='warnnew',required=False,action='store_true',help="If included, will log warnings for all new files detected")
-    parser.add_argument('--warn-duplicate',dest='warndup',required=False,action='store_true',help="If included, will log warningd for all files detected that are already stored and indexed in entries")
+    parser.add_argument('--warn-duplicate',dest='warndup',required=False,action='store_true',help="If included, will log warnings for all files detected that are already stored and indexed in entries")
     parser.add_argument('--ignore-pattern','-ip',dest='ignorepat',type=str,default='',required=False,help="If included, must be a string of the form '<string 1>|<string 2>|...|<string n>, where if any of the patterns match on the song name, verbatim, the song will be SKIPPED, and a warning will be issued")
     parser.add_argument('--verbose',dest='verbose',action='store_true',help="If specified, will print ALL logs (thats a lot) to console. This is not required as all messages are recorded in the logfile.")
+    parser.add_argument('--version','--info',dest='print_version',action='store_true',help="Print the version name and exit")
     args = parser.parse_args()
     CONFIG_PREPEND_TRACKNUM = args.prepend_tracknum
     CONFIG_SPLIT_IN_ALBUM_DIRECTORIES = args.split_album
