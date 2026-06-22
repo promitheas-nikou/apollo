@@ -157,12 +157,22 @@ fn generate_random_trackname(_conf: &ApolloConfig) -> String {
     let hex = generate_random_hex(6);
     format!("Unknown Track {hex}")
 }
+
+const DELIMITERS: &[char] = & ['|', '/', '\\', ';', ','];
+fn get_artist_name(data: &ApolloMetadata) -> String {
+    let s = data.album_artist.as_deref().unwrap_or(
+        data.artist_name.as_deref().unwrap_or("Unknown Artist")
+    );
+    let r = s.split_once(DELIMITERS).map_or(s, |(first,_)| {first});
+    r.to_string()
+}
+
 fn generate_file_path(conf: &ApolloConfig, data: &ApolloMetadata, original_path: &Path) -> PathBuf {
     // let mut path = conf.output_directory.clone();
     //
     // path.push(data.artist_name.as_deref().unwrap_or("Unknown Artist"));
 
-    let mut path = PathBuf::from(data.artist_name.as_deref().unwrap_or("Unknown Artist"));
+    let mut path = PathBuf::from(get_artist_name(data));
 
     if conf.split_in_album_directories {
         path.push(data.album_name.as_deref().unwrap_or("Unknown Album"));

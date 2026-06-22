@@ -12,7 +12,11 @@ Feel free to use this for your own music library, or any project you are working
 
 TODO:
 Custom sorting patterns (ideally custom pattern)
+
 Further reduction in effective syscalls (breaking down paths into trees to not 'check/create' directories that are guaranteed to exist by then)
+
 Slightly improved logging
+
 Automatic file culling
+
 (long-term) Possibly filters for modifying metadata of written files (e.g. deleting faulty entries or conflicting metadata)
