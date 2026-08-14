@@ -1,208 +1,24 @@
+mod config;
+mod tasks;
+pub mod metadata;
+
 use std::io::Write;
 use std::collections::{HashSet};
 use std::io::BufWriter;
 use std::path::{Path, PathBuf};
-use std::sync::LazyLock;
+// use std::sync::LazyLock;
 use clap::{ArgAction, Parser};
 use log;
 use log::{debug, error, info, warn, Level, LevelFilter};
 use rayon;
 use rayon::prelude::*;
-use regex::Regex;
-use id3;
-use id3::{Tag, TagLike, Timestamp};
-use rand::RngExt;
+// use regex::Regex;
+// use rand::RngExt;
+use config::ApolloConfig;
+use tasks::ApolloCopyTask;
+use tasks::ApolloDirectoryTask;
+use metadata::ApolloMetadata;
 
-#[derive(Clone)]
-struct ApolloDirectoryTask {
-    dir: PathBuf
-}
-
-#[derive(Clone)]
-struct ApolloCopyTask {
-    src: PathBuf,
-    dst: PathBuf,
-}
-
-#[allow(dead_code)]
-#[derive(Clone)]
-struct ApolloConfig {
-    prepend_tracknum: bool,
-    split_in_album_directories: bool,
-    write_playlist: bool,
-    write_playlist_archive: bool,
-    dry_run: bool,
-    do_blacklist: bool,
-    valid_number_delimiters: String,
-    level_new_file_alert: Level,
-    level_duplicate_file_alert: Level,
-    output_directory: PathBuf,
-    input_directory: PathBuf,
-    blacklist_patterns: String,
-    input_file_count: u32,
-    output_files_count: u32,
-    dirs_processed_count: u32,
-    dir_tasks: Vec<ApolloDirectoryTask>,
-    copy_tasks: Vec<ApolloCopyTask>,
-    targets: HashSet<PathBuf>,
-    dirs_queued: HashSet<PathBuf>,
-    playlist: Vec<PathBuf>
-}
-
-#[allow(dead_code)]
-impl ApolloConfig {
-    fn default() -> ApolloConfig {
-        ApolloConfig {
-            prepend_tracknum: false,
-            split_in_album_directories: false,
-            valid_number_delimiters: "".to_string(),
-            write_playlist: false,
-            level_new_file_alert: Level::Error,
-            level_duplicate_file_alert: Level::Error,
-            output_directory: Default::default(),
-            input_directory: Default::default(),
-            do_blacklist: false,
-            blacklist_patterns: "".to_string(),
-            input_file_count: 0,
-            output_files_count: 0,
-            dirs_processed_count: 0,
-            dry_run: true,
-            write_playlist_archive: false,
-            dir_tasks: vec![],
-            copy_tasks: vec![],
-            targets: HashSet::new(),
-            dirs_queued: HashSet::new(),
-            playlist: vec![],
-        }
-    }
-}
-
-#[allow(dead_code)]
-struct ApolloMetadata {
-    track_name: Option<String>,
-    album_name: Option<String>,
-    artist_name: Option<String>,
-    genre: Option<String>,
-    date: Option<Timestamp>,
-    album_artist: Option<String>,
-    disc_number: Option<u32>,
-    track_number: Option<u32>
-}
-
-impl ApolloMetadata {
-    fn empty() -> ApolloMetadata {
-        ApolloMetadata{
-            track_name: None,
-            album_name: None,
-            artist_name: None,
-            genre: None,
-            date: None,
-            album_artist: None,
-            disc_number: None,
-            track_number: None,
-        }
-    }
-}
-
-fn sanitize_str(path_str: &str) -> String {
-    // Compile regex only once for performance
-    static INVALID_CHARS: LazyLock<Regex> = LazyLock::new(|| {
-        Regex::new(r#"[?<>:"/\\|*\x00-\x1F]"#).unwrap()
-    });
-
-    let sanitized = INVALID_CHARS.replace_all(path_str, "_");
-
-    let r = sanitized.trim().to_string();
-
-    // if r.ends_with('.') {
-    //     r.push('_');
-    // }
-
-    r
-}
-
-fn extract_metadata(filepath: &Path) -> Option<ApolloMetadata> {
-    let res = Tag::read_from_path(filepath);
-    match res {
-        Err(_) => None,
-        Ok(tag) => {
-            Some(ApolloMetadata {
-                track_name: tag.title().map(|title| sanitize_str(title)),
-                album_name: tag.album().map(|album| sanitize_str(album)),
-                date: tag.date_released(),
-                genre: tag.genre().map(|genre| sanitize_str(genre)),
-                disc_number: tag.disc(),
-                track_number: tag.track(),
-                album_artist: tag.album_artist().map(|artist| sanitize_str(artist)),
-                artist_name: tag.artist().map(|artist| sanitize_str(artist)),
-            })
-        }
-    }
-}
-
-fn generate_random_hex(len: usize) -> String {
-    let mut rng = rand::rng();
-
-    let mut bytes = vec![0u8; (len+1)>>1];
-    rng.fill(&mut bytes[..]);
-    let mut ret = hex::encode(bytes);
-    if len&1!=0 {
-        ret.pop();
-    }
-    ret
-}
-
-#[allow(dead_code)]
-fn generate_random_trackname(_conf: &ApolloConfig) -> String {
-    let hex = generate_random_hex(6);
-    format!("Unknown Track {hex}")
-}
-
-const DELIMITERS: &[char] = & ['|', '/', '\\', ';', ','];
-fn get_artist_name(data: &ApolloMetadata) -> String {
-    let s = data.album_artist.as_deref().unwrap_or(
-        data.artist_name.as_deref().unwrap_or("Unknown Artist")
-    );
-    let r = s.split_once(DELIMITERS).map_or(s, |(first,_)| {first});
-    r.to_string()
-}
-
-fn generate_file_path(conf: &ApolloConfig, data: &ApolloMetadata, original_path: &Path) -> PathBuf {
-    // let mut path = conf.output_directory.clone();
-    //
-    // path.push(data.artist_name.as_deref().unwrap_or("Unknown Artist"));
-
-    let mut path = PathBuf::from(get_artist_name(data));
-
-    if conf.split_in_album_directories {
-        path.push(data.album_name.as_deref().unwrap_or("Unknown Album"));
-    }
-
-    let track_name = if let Some(name) = data.track_name.as_deref() {
-        name
-    } else {
-        original_path.file_stem().map(|a| a.to_str()).flatten().unwrap_or("Unknown Track")
-    };
-    let extension = original_path.extension().map(|e| e.to_str()).flatten();
-    let track_filename = if conf.prepend_tracknum {
-        if let Some(t) = data.track_number {
-            let track_num = t.to_string();
-            format!("{track_num} {track_name}")
-        } else {
-            format!("__ {track_name}")
-        }
-    } else {
-        track_name.to_string()
-    };
-    let filename = if let Some(ext) = extension {
-        format!("{track_filename}.{ext}")
-    } else {
-        track_filename
-    };
-
-    path.push(filename);
-    path
-}
 const MUSIC_SUFFIXES: [&str; 3] = ["mp3", "ogg", "wav"];
 fn is_music_file(filepath: &Path, _conf: &ApolloConfig) -> bool{
     MUSIC_SUFFIXES.contains(&filepath.extension().map(|t| {t.to_str()}).flatten().unwrap_or(""))
@@ -210,59 +26,6 @@ fn is_music_file(filepath: &Path, _conf: &ApolloConfig) -> bool{
 
 fn format_song_name(data: &ApolloMetadata) -> String {
     format!("'{}', '{}' by '{}'", data.album_name.as_deref().unwrap_or("Unknown Album"), data.track_name.as_deref().unwrap_or("Unknown Track"), data.artist_name.as_deref().unwrap_or("Unknown Artist"))
-}
-
-fn issue_copy_task(task: ApolloCopyTask, conf: &mut ApolloConfig) {
-    if conf.targets.contains(&task.dst) {
-        warn!("Target already queued: {}", task.dst.display());
-        return;
-    }
-    conf.copy_tasks.push(task.clone());
-    conf.targets.insert(task.dst);
-}
-
-fn issue_dir_task(task: ApolloDirectoryTask, conf: &mut ApolloConfig) {
-    if conf.dirs_queued.contains(&task.dir) {
-        // warn!("Target directory already queued: {}", task.dir.display());
-        return;
-    }
-    conf.dir_tasks.push(task.clone());
-    conf.dirs_queued.insert(task.dir);
-}
-
-fn process_copy_task(task: &ApolloCopyTask, conf: &ApolloConfig) -> bool {
-    // if !conf.dry_run {
-        if task.dst.exists() {
-            log::log!(conf.level_duplicate_file_alert, "File already exists: {}", task.dst.display());
-            return true
-        }
-        match std::fs::copy(&task.src, &task.dst) {
-            Ok(_) => {
-                log::log!(conf.level_new_file_alert, "Copying file: {} -> {}", task.src.display(), task.dst.display());
-                true
-            }
-            Err(e) => {
-                error!("Encountered IO error while copying '{}' -> '{}': {}", task.src.display(), task.dst.display(), e.to_string());
-                false
-            }
-        }
-    // }
-    // else {
-    //     true
-    // }
-}
-
-fn process_dir_task(task: &ApolloDirectoryTask, _conf: &ApolloConfig) -> bool {
-    match std::fs::create_dir_all(&task.dir) {
-        Ok(_) => {
-            debug!("Created directory: '{}'", task.dir.display());
-            true
-        }
-        Err(e) => {
-            error!("Encountered IO error while creating directory '{}': {}", task.dir.display(), e.to_string());
-            false
-        }
-    }
 }
 
 fn process_file(filepath: &Path, conf: &mut ApolloConfig) {
@@ -388,6 +151,8 @@ fn process_dir(dir: &Path, conf: &mut ApolloConfig) {
 use simple_logger::SimpleLogger;
 use std::time::Instant;
 use rayon::ThreadPoolBuilder;
+use crate::metadata::{extract_metadata, generate_file_path};
+use crate::tasks::{issue_copy_task, issue_dir_task, process_copy_task, process_dir_task};
 
 fn make_unique_filename(filename: &PathBuf) -> PathBuf {
     if !filename.exists() {
@@ -459,6 +224,7 @@ fn apollo_run_dir(conf: &mut ApolloConfig) {
         });
         if errors > 0 {
             error!("Aborting due to errors while creating directories!");
+            return
         }
         let pool = ThreadPoolBuilder::new()
             .num_threads(8)
@@ -467,6 +233,7 @@ fn apollo_run_dir(conf: &mut ApolloConfig) {
         pool.install(||
             conf.copy_tasks.par_iter().for_each(|task| {
                 if !process_copy_task(&task, &conf) {
+                    error!("Error while copying file: '{}' -> '{}", task.src.display(), task.dst.display());
                     //idk
                 }
             }));
