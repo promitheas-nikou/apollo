@@ -1,9 +1,10 @@
-use std::path::{Path, PathBuf};
+use std::path::{Path};
 use std::sync::LazyLock;
 use id3::{Tag, Timestamp, TagLike};
 use rand::RngExt;
 use regex::Regex;
 use crate::config::ApolloConfig;
+
 #[allow(dead_code)]
 pub struct ApolloMetadata {
     pub track_name: Option<String>,
@@ -13,7 +14,8 @@ pub struct ApolloMetadata {
     pub date: Option<Timestamp>,
     pub album_artist: Option<String>,
     pub disc_number: Option<u32>,
-    pub track_number: Option<u32>
+    pub track_number: Option<u32>,
+    pub extension: Option<String>,
 }
 
 impl ApolloMetadata {
@@ -27,7 +29,15 @@ impl ApolloMetadata {
             album_artist: None,
             disc_number: None,
             track_number: None,
+            extension: None,
         }
+    }
+    pub fn get_artist_name(self: &ApolloMetadata) -> String {
+        let s = self.album_artist.as_deref().unwrap_or(
+            self.artist_name.as_deref().unwrap_or("Unknown Artist")
+        );
+        let r = s.split_once(DELIMITERS).map_or(s, |(first,_)| {first});
+        r.to_string()
     }
 }
 
@@ -62,6 +72,7 @@ pub fn extract_metadata(filepath: &Path) -> Option<ApolloMetadata> {
                 track_number: tag.track(),
                 album_artist: tag.album_artist().map(|artist| sanitize_str(artist)),
                 artist_name: tag.artist().map(|artist| sanitize_str(artist)),
+                extension: filepath.extension().and_then(|x| x.to_str()).map(|x| String::from(x)),
             })
         }
     }
@@ -86,47 +97,3 @@ fn generate_random_trackname(_conf: &ApolloConfig) -> String {
 }
 
 const DELIMITERS: &[char] = & ['|', '/', '\\', ';', ','];
-fn get_artist_name(data: &ApolloMetadata) -> String {
-    let s = data.album_artist.as_deref().unwrap_or(
-        data.artist_name.as_deref().unwrap_or("Unknown Artist")
-    );
-    let r = s.split_once(DELIMITERS).map_or(s, |(first,_)| {first});
-    r.to_string()
-}
-
-pub fn generate_file_path(conf: &ApolloConfig, data: &ApolloMetadata, original_path: &Path) -> PathBuf {
-    // let mut path = conf.output_directory.clone();
-    //
-    // path.push(data.artist_name.as_deref().unwrap_or("Unknown Artist"));
-
-    let mut path = PathBuf::from(get_artist_name(data));
-
-    if conf.split_in_album_directories {
-        path.push(data.album_name.as_deref().unwrap_or("Unknown Album"));
-    }
-
-    let track_name = if let Some(name) = data.track_name.as_deref() {
-        name
-    } else {
-        original_path.file_stem().map(|a| a.to_str()).flatten().unwrap_or("Unknown Track")
-    };
-    let extension = original_path.extension().map(|e| e.to_str()).flatten();
-    let track_filename = if conf.prepend_tracknum {
-        if let Some(t) = data.track_number {
-            let track_num = t.to_string();
-            format!("{track_num} {track_name}")
-        } else {
-            format!("__ {track_name}")
-        }
-    } else {
-        track_name.to_string()
-    };
-    let filename = if let Some(ext) = extension {
-        format!("{track_filename}.{ext}")
-    } else {
-        track_filename
-    };
-
-    path.push(filename);
-    path
-}

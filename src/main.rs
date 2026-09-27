@@ -1,9 +1,11 @@
 mod config;
 mod tasks;
 pub mod metadata;
+pub mod sorting;
 
 use std::io::Write;
 use std::collections::{HashSet};
+use std::{fs, io};
 use std::io::BufWriter;
 use std::path::{Path, PathBuf};
 // use std::sync::LazyLock;
@@ -47,9 +49,15 @@ fn process_file(filepath: &Path, conf: &mut ApolloConfig) {
     conf.input_file_count += 1;
     info!("Interpreting as: {}", format_song_name(&data));
     let destination = generate_file_path(conf, &data, filepath);
-    let destination_abs = conf.output_directory.join(&destination);
+    if let Err(e) = destination {
+        error!("Failed to generate output file: '{}'", e);
+        return
+    }
+    let correct_destination = destination.unwrap();
+    info!("Moving to: {}", correct_destination.display());
+    let destination_abs = conf.output_directory.join(&correct_destination);
     if conf.write_playlist {
-        conf.playlist.push(destination);
+        conf.playlist.push(correct_destination);
     }
 
     // if destination_abs.exists() {
@@ -90,13 +98,41 @@ struct ApolloArgs {
     #[arg(long="dry-run", action=ArgAction::SetTrue)]
     dry_run: bool,
     #[arg(long="archive-playlists", short='L', action=ArgAction::SetTrue)]
-    playlist_archive: bool
+    playlist_archive: bool,
+    #[arg(long="format", default_value = None)]
+    format: Option<String>,
 }
 
 fn generate_config_from_args(a: &ApolloArgs) -> ApolloConfig  {
+    // if a.test_mode {
+    //     let mut test = String::new();
+    //     let test_metadata = ApolloMetadata{
+    //         track_name: Some("<track_name>".to_string()),
+    //         album_artist: Some("<album_artist>".to_string()),
+    //         artist_name: Some("<artist_name>".to_string()),
+    //         album_name: Some("<album_name>".to_string()),
+    //         track_number: Some(42),
+    //         disc_number: Some(67),
+    //         genre: Some("<genre>".to_string()),
+    //         date: Some(Timestamp::from_str("19-01-2005").unwrap())
+    //     };
+    //     let pft: ApolloStringFormat = ApolloStringFormat::try_from("Track %d-%n %T by %A, %a").unwrap();
+    //     pft.write(&test_metadata, &mut test).unwrap();
+    //     println!("{}", test);
+    //     exit(0);
+    // }
+    let backup_format: &str = if a.dont_split_album {
+        "%A/%T"
+    } else {
+        "%A/%a/%T"
+    };
+    let format: &str = if let Some(format) = &a.format {
+        format.as_str()
+    } else {
+        backup_format
+    };
     ApolloConfig {
         prepend_tracknum: a.prepend_tracknum,
-        split_in_album_directories: !a.dont_split_album,
         valid_number_delimiters: ",_/;".to_string(),
         write_playlist: a.create_playlist || a.playlist_archive,
         write_playlist_archive: a.playlist_archive,
@@ -115,6 +151,10 @@ fn generate_config_from_args(a: &ApolloArgs) -> ApolloConfig  {
         targets: HashSet::new(),
         dirs_queued: HashSet::new(),
         playlist: vec![],
+        format: process_format_input_string(format).unwrap_or_else(|| {
+            error!("Failed to process format string! Aborting!");
+            std::process::exit(2)
+        })
     }
 }
 fn process_dir(dir: &Path, conf: &mut ApolloConfig) {
@@ -151,7 +191,8 @@ fn process_dir(dir: &Path, conf: &mut ApolloConfig) {
 use simple_logger::SimpleLogger;
 use std::time::Instant;
 use rayon::ThreadPoolBuilder;
-use crate::metadata::{extract_metadata, generate_file_path};
+use crate::metadata::{extract_metadata};
+use crate::sorting::{generate_file_path, process_format_input_string};
 use crate::tasks::{issue_copy_task, issue_dir_task, process_copy_task, process_dir_task};
 
 fn make_unique_filename(filename: &PathBuf) -> PathBuf {
@@ -213,7 +254,36 @@ fn write_playlist_to_file(conf: &ApolloConfig) -> Result<(), std::io::Error> {
     Ok(())
 }
 
+
+fn is_dir_empty(path: impl AsRef<Path>) -> io::Result<bool> {
+    Ok(fs::read_dir(path)?.next().is_none())
+}
 fn apollo_run_dir(conf: &mut ApolloConfig) {
+    if conf.output_directory.exists() {
+        if conf.output_directory.is_dir() {
+            if is_dir_empty(&conf.output_directory).unwrap() {
+                info!("Output directory exists but is empty; proceeding");
+            }
+            else {
+                error!("Output directory exists but is not empty! Aborting!");
+                return
+            }
+        }
+        else {
+            error!("Output path is not a directory! Aborting!");
+            return
+        }
+    }
+    else {
+        info!("Output directory does not exist. Creating it...");
+        if conf.dry_run {
+            warn!("Output directory does not exists, but not creating it because this is a dry run...");
+        }
+        else {
+            fs::create_dir_all(&conf.output_directory).unwrap();
+        }
+        info!("Output directory created! Proceeding...");
+    }
     process_dir(&conf.input_directory.clone(), conf);
     let mut errors = 0;
     if !conf.dry_run {

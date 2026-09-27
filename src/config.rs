@@ -1,13 +1,13 @@
 use std::collections::HashSet;
 use std::path::PathBuf;
 use log::{Level};
+use crate::sorting::ApolloStringFormat;
 use crate::tasks::ApolloDirectoryTask;
 use crate::tasks::ApolloCopyTask;
 #[allow(dead_code)]
 #[derive(Clone)]
 pub struct ApolloConfig {
     pub prepend_tracknum: bool,
-    pub split_in_album_directories: bool,
     pub write_playlist: bool,
     pub write_playlist_archive: bool,
     pub dry_run: bool,
@@ -25,7 +25,8 @@ pub struct ApolloConfig {
     pub copy_tasks: Vec<ApolloCopyTask>,
     pub targets: HashSet<PathBuf>,
     pub dirs_queued: HashSet<PathBuf>,
-    pub playlist: Vec<PathBuf>
+    pub playlist: Vec<PathBuf>,
+    pub format: ApolloStringFormat
 }
 
 #[allow(dead_code)]
@@ -33,7 +34,6 @@ impl ApolloConfig {
     pub fn default() -> ApolloConfig {
         ApolloConfig {
             prepend_tracknum: false,
-            split_in_album_directories: false,
             valid_number_delimiters: "".to_string(),
             write_playlist: false,
             level_new_file_alert: Level::Error,
@@ -52,6 +52,7 @@ impl ApolloConfig {
             targets: HashSet::new(),
             dirs_queued: HashSet::new(),
             playlist: vec![],
+            format: ApolloStringFormat::try_from("%A/%T").unwrap(),
         }
     }
 }
