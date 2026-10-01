@@ -81,29 +81,48 @@ fn process_file(filepath: &Path, conf: &mut ApolloConfig) {
 #[command(version, about = option_env!("CARGO_PKG_DESCRIPTION"), author)]
 // #[clap(APOLLO_AUTHOR, APOLLO_VERSION, )]
 struct ApolloArgs {
+    ///Input directory (recursively parsed)
     #[arg(short, long)]
     input: String,
+    ///Output directory (root for output filenames)
     #[arg(short, long)]
     output: String,
+    ///Legacy format option, use --format instead
     #[arg(long="prepend-track-number", action=ArgAction::SetTrue)]
     prepend_tracknum: bool,
+    ///Legacy format option, use --format instead
     #[arg(long="dont-split-albums", action=ArgAction::SetTrue)]
     dont_split_album: bool,
-    #[arg(short='l',long="create-playlist", action=ArgAction::SetTrue)]
-    create_playlist: bool,
+    ///Warn for every DUPLICATE song found (does not warn for songs found only once)
     #[arg(long="warn-duplicate", action=ArgAction::SetTrue)]
     warn_duplicate: bool,
+    ///Warn for every NEW song found (does not warn when it is found again)
     #[arg(long="warn-new", action=ArgAction::SetTrue)]
     warn_new: bool,
+    ///Execute the full program but skip all filesystem copies
+    /// (still prints full log)
     #[arg(long="dry-run", action=ArgAction::SetTrue)]
     dry_run: bool,
+    ///Parse each direct subdirectory of the input directory as a playlist
     #[arg(long="archive-playlists", short='L', action=ArgAction::SetTrue)]
     playlist_archive: bool,
-    #[arg(long="format", default_value = None)]
+    ///Also generate a .m3u8 file that contains all songs found in subdirectory (in the new format)
+    #[arg(short='l',long="create-playlist", action=ArgAction::SetTrue)]
+    create_playlist: bool,
+    #[arg(long="format", default_value = None, help = "
+Format string to generate output paths for music files. Valid format tokens are:
+%T -> Track name
+%a -> Album name
+%A -> Artist name
+%d -> Disc number
+%n -> Track number
+%% -> Literal '%' (percent) symbol
+Use slashes to specify subdirectories (like normal)
+")]
     format: Option<String>,
 }
 
-fn generate_config_from_args(a: &ApolloArgs) -> ApolloConfig  {
+fn generate_config_from_args(a: &ApolloArgs) -> Option<ApolloConfig>  {
     // if a.test_mode {
     //     let mut test = String::new();
     //     let test_metadata = ApolloMetadata{
@@ -131,7 +150,12 @@ fn generate_config_from_args(a: &ApolloArgs) -> ApolloConfig  {
     } else {
         backup_format
     };
-    ApolloConfig {
+    let format_option = process_format_input_string(format);
+    let Some(final_format) = format_option else {
+        error!("Failed to process format string! Aborting!");
+        return None
+    };
+    Some(ApolloConfig {
         prepend_tracknum: a.prepend_tracknum,
         valid_number_delimiters: ",_/;".to_string(),
         write_playlist: a.create_playlist || a.playlist_archive,
@@ -151,11 +175,8 @@ fn generate_config_from_args(a: &ApolloArgs) -> ApolloConfig  {
         targets: HashSet::new(),
         dirs_queued: HashSet::new(),
         playlist: vec![],
-        format: process_format_input_string(format).unwrap_or_else(|| {
-            error!("Failed to process format string! Aborting!");
-            std::process::exit(2)
-        })
-    }
+        format: final_format
+    })
 }
 fn process_dir(dir: &Path, conf: &mut ApolloConfig) {
     if !dir.exists() {
@@ -214,7 +235,7 @@ fn make_unique_filename(filename: &PathBuf) -> PathBuf {
 fn write_playlist_to_file(conf: &ApolloConfig) -> Result<(), std::io::Error> {
     let playlist_name = conf.input_directory.file_name().unwrap().to_str().unwrap_or("Unknown Playlist");
     info!("Writing playlist with name '{}'", playlist_name);
-    let playlist_filename = conf.output_directory.join(format!("Playlists/{playlist_name}.m3u"));
+    let playlist_filename = conf.output_directory.join(format!("Playlists/{playlist_name}.m3u8"));
     let playlist_dir = playlist_filename.parent().unwrap();
     if !playlist_dir.exists() {
         if let Err(e) = std::fs::create_dir_all(&playlist_dir) {
@@ -317,14 +338,19 @@ fn apollo_run_dir(conf: &mut ApolloConfig) {
 }
 
 fn main() {
-    let args = ApolloArgs::parse();
-    let mut conf = generate_config_from_args(&args);
     SimpleLogger::new().with_level(LevelFilter::Info).init().unwrap();
     // let mut conf: ApolloConfig = ApolloConfig::default();
     // conf.output_directory = PathBuf::from("/home/promitheas/Downloads/test123/");
     // conf.input_directory = PathBuf::from("/home/promitheas/Downloads/Music/nightcore classics 2000/");
     let start = Instant::now();
 
+    let args = ApolloArgs::parse();
+    let maybe_conf = generate_config_from_args(&args);
+
+    let Some(mut conf) = maybe_conf else {
+        error!("Failed to parse arguments! Aborting!");
+        return
+    };
     if conf.write_playlist_archive {
         warn!("Proceeding in playlist archive mode!");
         let dir = &conf.input_directory;
@@ -340,7 +366,7 @@ fn main() {
         for entry in x {
             let entry = entry.unwrap();
             warn!("Processing playlist in {}!", entry.path().display());
-            let mut new_conf = generate_config_from_args(&args);
+            let mut new_conf = generate_config_from_args(&args).unwrap();
             new_conf.input_directory = entry.path();
             let start = Instant::now();
             apollo_run_dir(&mut new_conf);

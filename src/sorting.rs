@@ -72,6 +72,7 @@ impl TryFrom<&str> for ApolloStringFormat {
                     'n' => tks.push(ApolloFormatToken::TrackNumber),
                     'a' => tks.push(ApolloFormatToken::AlbumName),
                     'A' => tks.push(ApolloFormatToken::ArtistName),
+                    '%' => tks.push(ApolloFormatToken::Literal("%".into())),
                     _ => return Err(format!("unimplemented token: {c}").into()),
                 }
                 special = false;
