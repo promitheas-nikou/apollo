@@ -24,8 +24,7 @@ impl ApolloFormatToken {
                 write!(target, "{name}")?;
             }
             ApolloFormatToken::ArtistName => {
-                let name = data.artist_name.as_deref()
-                    .ok_or("artist_name is missing")?;
+                let name = data.get_artist_name();
                 write!(target, "{name}")?;
             }
             ApolloFormatToken::AlbumName => {
@@ -46,7 +45,7 @@ impl ApolloFormatToken {
             ApolloFormatToken::Literal(value) => {
                 write!(target, "{value}")?;
             }
-            _ => return Err(format!("unimplemented token: {self:?}").into()),
+            //_ => return Err(format!("unimplemented token: {self:?}").into()),
         }
         Ok(())
     }
@@ -61,10 +60,15 @@ impl TryFrom<&str> for ApolloStringFormat {
     type Error = String;
 
     fn try_from(s: &str) -> Result<Self, Self::Error> {
+        if s.starts_with('/') {
+            error!("Format string starts with a slash! This would result in the files being placed in your filesystem root!");
+            error!("Aborting! If you would really like to place the files in the root directory, remove the leading slash but specify root as the output directory!");
+            return Err("format with leading slash".to_string())
+        }
         let mut tks = Vec::<ApolloFormatToken>::new();
         let mut buf = String::with_capacity(64);
         let mut special = false;
-        for (i, c) in s.char_indices() {
+        for (_i, c) in s.char_indices() {
             if special {
                 match c {
                     'T' => tks.push(ApolloFormatToken::TrackName),
@@ -114,7 +118,7 @@ impl ApolloStringFormat {
     }
 }
 
-pub fn generate_file_path(conf: &ApolloConfig, data: &ApolloMetadata, original_path: &Path) -> Result<PathBuf,Box<dyn Error>> {
+pub fn generate_file_path(conf: &ApolloConfig, data: &ApolloMetadata, _original_path: &Path) -> Result<PathBuf,Box<dyn Error>> {
     // let mut path = conf.output_directory.clone();
     //
     // path.push(data.artist_name.as_deref().unwrap_or("Unknown Artist"));

@@ -26,7 +26,8 @@ pub struct ApolloConfig {
     pub targets: HashSet<PathBuf>,
     pub dirs_queued: HashSet<PathBuf>,
     pub playlist: Vec<PathBuf>,
-    pub format: ApolloStringFormat
+    pub format: ApolloStringFormat,
+    pub merge: bool
 }
 
 #[allow(dead_code)]
@@ -53,6 +54,7 @@ impl ApolloConfig {
             dirs_queued: HashSet::new(),
             playlist: vec![],
             format: ApolloStringFormat::try_from("%A/%T").unwrap(),
+            merge: false
         }
     }
 }

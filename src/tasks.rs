@@ -2,6 +2,11 @@ use std::path::PathBuf;
 use log::{debug, error, warn};
 use crate::config::{ApolloConfig};
 
+macro_rules! unless_dry {
+    ($conf:expr, $dry:expr, $action:expr) => {
+        if $conf.dry_run { $dry } else { $action }
+    };
+}
 
 #[derive(Clone)]
 pub struct ApolloDirectoryTask {
@@ -36,7 +41,7 @@ pub fn process_copy_task(task: &ApolloCopyTask, conf: &ApolloConfig) -> bool {
         log::log!(conf.level_duplicate_file_alert, "File already exists: {}", task.dst.display());
         return true
     }
-    match std::fs::copy(&task.src, &task.dst) {
+    match unless_dry!(conf, Ok(0), std::fs::copy(&task.src, &task.dst)) {
         Ok(_) => {
             log::log!(conf.level_new_file_alert, "Copying file: {} -> {}", task.src.display(), task.dst.display());
             true
@@ -52,8 +57,8 @@ pub fn process_copy_task(task: &ApolloCopyTask, conf: &ApolloConfig) -> bool {
     // }
 }
 
-pub fn process_dir_task(task: &ApolloDirectoryTask, _conf: &ApolloConfig) -> bool {
-    match std::fs::create_dir_all(&task.dir) {
+pub fn process_dir_task(task: &ApolloDirectoryTask, conf: &ApolloConfig) -> bool {
+    match unless_dry!(conf, Ok(()), std::fs::create_dir_all(&task.dir)) {
         Ok(_) => {
             debug!("Created directory: '{}'", task.dir.display());
             true
